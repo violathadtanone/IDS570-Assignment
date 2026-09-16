@@ -1,0 +1,282 @@
+---
+title: "Homework Assignment One: Text Preparation"
+author: "Viola Thadtanone"
+format: html
+editor: visual
+---
+
+## Setup & Preparation
+
+### Import Library
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(tidytext)
+library(ggplot2)
+library(forcats)
+library(tibble)
+library(scales)
+```
+
+### Import input text files
+
+```{r}
+# You will need the correct file paths if you don't follow my naming conventions:
+file_a <- "texts/A07594__Circle_of_Commerce.txt"
+file_b <- "texts/B14801__Free_Trade.txt"
+
+# Read the raw text files into R
+text_a <- read_file(file_a)
+text_b <- read_file(file_b)
+
+# Combine into a tibble for tidytext workflows
+texts <- tibble(
+  doc_title = c("Circle_of_Commerce", "Free_Trade"),
+  text = c(text_a, text_b)
+)
+
+texts
+```
+
+## I. Create a diagnostics table
+
+### Create 'words' tibble:
+
+This will break down the text in `texts` into individual word tokens, with one word token per row.
+
+```{r}
+words <- texts %>%
+  # Break sentences into a word (i.e. similar to .split() in Python)
+  unnest_tokens(word, text) %>%
+  
+  # Make everything into lower case
+  mutate(word = str_to_lower(word))
+
+# Count total tokens in words before s
+total_tokens <- words %>%
+  count(doc_title, name = "total_tokens")
+
+words
+total_tokens
+```
+
+### Define stopwords
+
+```{r}
+# Start with tidytext's built-in stopword list - This is such as "the", "a", "an".
+data("stop_words")
+
+# Add our own project-specific stopwords (you can, and will, expand this list later)
+custom_stopwords <- tibble(
+  word = c(
+    "vnto", "haue", "doo", "hath", "bee", "ye", "thee"
+  )
+)
+
+all_stopwords <- bind_rows(stop_words, custom_stopwords) %>%
+  distinct(word)
+
+all_stopwords
+```
+
+### Remove stopwords
+
+```{r}
+words_remove <- words %>%
+  
+  # Remove stopwords - Only keep the unmatch one
+  anti_join(all_stopwords, by = "word")
+
+# Count total tokens in words after stopwords removal
+tokens_after_stopwords <- words_remove %>%
+  count(doc_title, name = "tokens_after_stopwords")
+
+words_remove 
+tokens_after_stopwords
+```
+
+### Remove project-specific stopwords
+
+```{r}
+words_remove_customs <- words %>%
+  
+  # Remove project-specific stopwords - Only keep the unmatch one
+  anti_join(custom_stopwords, by = "word")
+
+# Count total tokens in words after project-specific stopwords removal
+tokens_after_customs <- words_remove_customs %>%
+  count(doc_title, name = "tokens_after_customs")
+
+words_remove_customs
+tokens_after_customs
+
+```
+
+### Create Corpus Diagnostics Table
+
+```{r}
+# Create corpus diagnostics
+corpus_diagnostics <- total_tokens %>%
+  left_join(tokens_after_stopwords, by = "doc_title") %>%
+  left_join(tokens_after_customs, by = "doc_title") %>%
+  mutate(
+    tokens_removed = total_tokens - tokens_after_stopwords,
+    percent_removed = tokens_removed / total_tokens * 100,
+    tokens_removed_customs = total_tokens - tokens_after_customs,
+    percent_removed_customs = tokens_removed_customs / total_tokens * 100
+  )
+
+corpus_diagnostics
+```
+
+### Interpretive questions for Section I: diagnostics
+
+For *Circle of Commerce*, 56.64% of the words were removed as stopwords, while 59.82% of the words were omitted from *Free Trade*. Both percentages are approximately the same for the two documents and this is expected since both texts were written during the same period between 1622 and 1623. Hence, they should have similar frequencies of stopword usage compared to texts written in the 20th century.
+
+More than half of the words were removed through this transformation, implying that the number of words available for analysis was also substantially reduced. The impact of this transformation on the content of the texts could be further explored.
+
+In addition, further analysis was also performed on project-specific countwords, which demonstrated that around 1% of stopwords were project-specific. Although this proportion is relatively small compared with the stopwords removed using the built-in tidytext list, these words may still have a meaningful impact on the analysis because they are completely excluded from the text. As the number of stopwords increases, fewer words remain available for analysis, which could potentially affect the interpretation of the text and the patterns identified from it. Therefore, even a relatively small set of project-specific stopwords should be carefully considered when transforming the text, where we can further explore this in the subsequent section.
+
+## II. Compare the most frequent words before/after stopwords removal
+
+### A. Before stopword removal
+
+```{r}
+word_counts_before <- texts %>%
+  unnest_tokens(word, text) %>%
+  mutate(word = str_to_lower(word)) %>%
+  count(doc_title, word, sort = TRUE)
+
+word_counts_before
+```
+
+```{r}
+plot_n_words <- 15  # you can change this as needed
+
+# Select the most frequent words overall
+word_comparison_tbl <- word_counts_before %>%
+  pivot_wider(
+    names_from = doc_title,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  mutate(max_n = pmax(`Circle_of_Commerce`, `Free_Trade`)) %>%
+  arrange(desc(max_n))
+
+word_plot_data <- word_comparison_tbl %>%
+  slice_head(n = plot_n_words) %>%
+  pivot_longer(
+    cols = c(`Circle_of_Commerce`, `Free_Trade`),
+    names_to = "doc_title",
+    values_to = "n"
+  ) %>%
+  mutate(word = fct_reorder(word, n, .fun = max))
+
+ggplot(word_plot_data, aes(x = n, y = word)) + #black magic happens thanks to ggplot
+  geom_col() +
+  facet_wrap(~ doc_title, scales = "free_x") +
+  labs(
+    title = "Most frequent words (before stopword removal)",
+    subtitle = paste0(
+      "Top ", plot_n_words,
+      " words by maximum frequency across both texts"
+    ),
+    x = "Word frequency",
+    y = NULL
+  ) +
+  theme_minimal()
+```
+
+### B. After stopword removal
+
+```{r}
+word_counts_after <- texts %>%
+  unnest_tokens(word, text) %>%
+  mutate(word = str_to_lower(word)) %>%
+  anti_join(all_stopwords, by = "word") %>%
+  count(doc_title, word, sort = TRUE)
+
+word_counts_after
+```
+
+```{r}
+plot_n_words <- 15  # you can change this as needed
+
+# Select the most frequent words overall
+word_comparison_tbl <- word_counts_after %>%
+  pivot_wider(
+    names_from = doc_title,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  mutate(max_n = pmax(`Circle_of_Commerce`, `Free_Trade`)) %>%
+  arrange(desc(max_n))
+
+word_plot_data <- word_comparison_tbl %>%
+  slice_head(n = plot_n_words) %>%
+  pivot_longer(
+    cols = c(`Circle_of_Commerce`, `Free_Trade`),
+    names_to = "doc_title",
+    values_to = "n"
+  ) %>%
+  mutate(word = fct_reorder(word, n, .fun = max))
+
+ggplot(word_plot_data, aes(x = n, y = word)) + #black magic happens thanks to ggplot
+  geom_col() +
+  facet_wrap(~ doc_title, scales = "free_x") +
+  labs(
+    title = "Most frequent words (after stopword removal)",
+    subtitle = paste0(
+      "Top ", plot_n_words,
+      " words by maximum frequency across both texts"
+    ),
+    x = "Word frequency",
+    y = NULL
+  ) +
+  theme_minimal()
+```
+
+In both texts, words such as "*the"*, "*of"*, "*and"*, "*in",* and "*to"* dominate the most frequent words before stopword removal. Once these stopwords have been removed, the key themes of the texts, such as *trade*, *exchange*, *merchants*, and *commodities*, become more apparent. For example, the high frequency of *trade* and *exchange* suggests that the texts focus on trade and commercial activities. Therefore, removing stopwords provides clearer visibility of the subject matter and makes it easier to identify the main themes of the texts.
+
+However, some stopwords such as '*of',* '*and', 'or'* are useful in determining the relationship between each word. By removing them entirely, it can create challenges in performing the analysis on both texts in details.
+
+## III. Test the effect of our custom stopword list
+
+```{r}
+words_after_standard <- words %>%
+  
+  # Remove project-specific stopwords - Only keep the unmatch one
+  anti_join(stop_words, by = "word")
+
+# Count total tokens in words after project-specific stopwords removal
+tokens_after_standard <- words_after_standard %>%
+  count(doc_title, name = "tokens_remove_standard")
+
+words_after_standard
+tokens_after_standard
+```
+
+```{r}
+word_counts_custom <- texts %>%
+  unnest_tokens(word, text) %>%
+  mutate(word = str_to_lower(word)) %>%
+  anti_join(stop_words, by = "word") %>%
+  count(doc_title, word, sort = TRUE)
+
+word_counts_custom
+```
+
+"*ſo*", "*haue*" and "*hee*", which appear frequently across both documents, are simply an archaic spelling form of our standard stopword, where "*ſo*" is so, "*haue*" is have and "*hee*" is he. These words do not carry significant meaning and can be considered as unhelpful, if our goal is to identify the subject matter of the documents. Adding these custom stopwords to our list allows the key themes of the texts to become more apparent, but identifying them requires knowledge and understanding of our texts of interest.
+
+One particular area of research where these archaic custom words can be useful is in understanding the transition from Old English to Modern English. Given that the spelling of some words remains relatively similar, it is interesting to examine what caused these words to transform and change over time.
+
+Overall, there is no single, universally “correct” stopword list becauseit depends on the focus of the analysis. If the analysis focuses on the key themes of the texts, generic stopwords are useful for removing words primarily used for grammatical purposes. However, if the analysis focuses on how language differs across period, it may be better to retain these stopwords, as they can provide useful information about changes in language over time.
+
+## Final Reflection
+
+I would disagree with the student because the importance of a word depends on the focus of the analysis. If the goal is to understand the key themes of the texts, removing stopwords can make more meaningful words become apparent. For example, after removing both standard and custom stopwords, we could distinctively interpret that the texts focus on themes such as "*trade*", "*merchants*", and "*money*", compared with removing only standard stopwords.
+
+However, if the goal is to study the usage of English grammar and how it change overtime, stopwords can be important, and removing them could lead to a different analysis interpretation.
