@@ -102,6 +102,15 @@ bing <- get_sentiments("bing")
 ### Step 3: Compute raw sentiment totals
 
 ```{r}
+# Count each sentiment word
+sentiment_word_1 <- tokens_1_clean %>%
+  inner_join(bing, by = "word") %>%
+  count(doc_title, sentiment, word, sort = TRUE)
+
+sentiment_word_1
+```
+
+```{r}
 # Create a summary table for raw sentiment totals
 sentiment_summary1 <- tokens_1_clean %>%
   inner_join(bing, by = "word") %>%
@@ -193,11 +202,9 @@ tfidf_tidy
 
 ```{r}
 # Join tidy table to the Bing sentiment dictionary
-
 tfidf_bing <- tfidf_tidy %>%
   inner_join(bing, by = "word") %>%
   arrange(doc_title, desc(tfidf))
-
 tfidf_bing
 ```
 
