@@ -1,0 +1,236 @@
+---
+title: "Week 3 & 4: Sentiment Analysis and TF-IDF"
+author: "Viola Thadtanone"
+format: html
+editor: visual
+---
+
+## Setup & Preparation
+
+### Import Library
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(tidytext)
+library(ggplot2)
+library(forcats)
+library(tibble)
+library(scales)
+library(quanteda)
+library(quanteda.textstats)
+```
+
+### Import input text files
+
+```{r}
+# Read the raw text files into R
+circle_raw <- read_file('texts/A07594__Circle_of_Commerce.txt')
+free_raw <- read_file('texts/B14801__Free_Trade.txt')
+txt_third <- read_file('texts/A06785.txt')
+
+# Combine into a tibble for tidytext workflows
+texts_miss <- tibble(
+  doc_title = c("Circle of Commerce", "Free Trade"),
+  text = c(circle_raw, free_raw)
+)
+texts_miss
+```
+
+## I. Raw-Count Sentiment Analysis
+
+### Step 1: Tokenize and clean the text:
+
+```{r}
+# Perform data cleaning and tokenize overall texts including the assumptions that
+# 1. Remove punctuation since it does not affect the meaning of the words
+# 2. Remove numbers since it may include irrelevant numbers from pagination
+# 3. Remove symboles since it is likely a transcription/OCR errors
+tokens_1 <- texts_miss %>%
+  mutate(
+    text = text %>%
+      str_replace_all("ſ", "s") %>%
+      str_replace_all("\\s+", " ")
+  ) %>%
+  unnest_tokens(word, text) %>%          # This already removed punctuation
+  mutate(word = str_to_lower(word)) %>%
+  filter(
+    !str_detect(word, "^[0-9]+$"),
+    !str_detect(word, "[^[:alnum:]]")
+  )
+
+tokens_1
+```
+
+```{r}
+# Start with tidytext's built-in stopword list - This is such as "the", "a", "an".
+data("stop_words")
+
+# Add our own project-specific stopwords (you can, and will, expand this list later)
+custom_stopwords <- tibble(
+  word = c(
+    "vnto", "haue", "doo", "hath", "bee", "ye", "thee"
+  )
+)
+
+all_stopwords <- bind_rows(stop_words, custom_stopwords) %>%
+  distinct(word)
+
+all_stopwords
+```
+
+### Remove stopwords
+
+```{r}
+tokens_1_clean <- tokens_1 %>%
+  
+  # Remove stopwords - Only keep the unmatch one
+  anti_join(all_stopwords, by = "word")
+
+tokens_1_clean
+```
+
+### Step 2: Join tokens to the Bing sentiment dictionary
+
+```{r}
+# get_sentiments("bing") returns a table with two columns: word and sentiment
+bing <- get_sentiments("bing")
+```
+
+### Step 3: Compute raw sentiment totals
+
+```{r}
+# Create a summary table for raw sentiment totals
+sentiment_summary1 <- tokens_1_clean %>%
+  inner_join(bing, by = "word") %>%
+  count(doc_title, sentiment) %>%
+  pivot_wider(
+    names_from = sentiment,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  mutate(net_sentiment = positive - negative)
+
+sentiment_summary1
+```
+
+## II. TF-IDF–Weighted Sentiment Analysis
+
+### Step 4: Compute TF-IDF for words in each document
+
+```{r}
+texts <- c(
+  "Circle of Commerce" = circle_raw,
+  "Free Trade"         = free_raw,
+  "Malynes"  = txt_third
+)
+
+# Perform data cleaning similar to the previous analyis
+texts <- texts %>%
+  str_replace_all("ſ", "s") %>%
+  str_replace_all("\\s+", " ") %>%
+  str_to_lower()
+
+# Incorporate into Corpus
+corp <- corpus(texts)
+corp
+```
+
+```{r}
+# Perform tokenization with same assumptions with Raw-Count Sentiment Analysis
+tokens_2_clean <- tokens(
+  corp,
+  remove_punct = TRUE,
+  remove_numbers = TRUE,
+  remove_symbols = TRUE
+)
+
+# Remove the same set of stopwords 
+tokens_2_clean <- tokens_2_clean %>%
+  tokens_remove(all_stopwords$word)
+
+tokens_2_clean
+```
+
+```{r}
+# Create Document-Feature Matrix using all 3 documents
+dfm_mat <- dfm(tokens_2_clean)
+dfm_mat
+```
+
+```{r}
+# Calculate TF-IDF using the full corpus
+dfm_tfidf_mat <- dfm_tfidf(dfm_mat)
+dfm_tfidf_mat
+```
+
+### Step 5: Convert the TF-IDF results to a tidy table
+
+```{r}
+# Convert the matrix into a regular data frame
+tfidf_df <- as.data.frame(as.matrix(dfm_tfidf_mat))
+tfidf_df$doc_title <- rownames(tfidf_df)
+tfidf_df
+```
+
+```{r}
+# Convert to tiday format and join the sentimate from 
+tfidf_tidy <- tfidf_df %>%
+  pivot_longer(
+    cols = -doc_title,
+    names_to = "word",
+    values_to = "tfidf"
+  ) %>%
+  filter(tfidf > 0) %>%  # Remove rows where the TF-IDF weight is 0
+  filter(doc_title %in% c("Circle of Commerce", "Free Trade")) # Only kept the first 2 documents
+
+tfidf_tidy
+```
+
+### Step 6: Keep only sentiment-bearing words
+
+```{r}
+# Join tidy table to the Bing sentiment dictionary
+
+tfidf_bing <- tfidf_tidy %>%
+  inner_join(bing, by = "word") %>%
+  arrange(doc_title, desc(tfidf))
+
+tfidf_bing
+```
+
+### Step 7: Compute TF-IDF–weighted sentiment totals
+
+```{r}
+# Create a summary table 
+sentiment_summary2 <- tfidf_bing %>%
+  group_by(doc_title, sentiment) %>%
+  summarise(total_tfidf = sum(tfidf)) %>%
+  pivot_wider(
+    names_from = sentiment,
+    values_from = total_tfidf,
+    values_fill = 0  # Fill NA with 0
+  ) %>%
+  mutate(net_tfidf_sentiment = positive - negative)
+
+sentiment_summary2
+```
+
+## III. Compare Raw vs. TF-IDF Sentiment
+
+```{r}
+# Create final table for csv export
+final_table <- sentiment_summary1 %>%
+  left_join(sentiment_summary2, by = "doc_title") %>%
+  rename(
+    positive_raw = positive.x,
+    negative_raw = negative.x,
+    net_sentiment_raw = net_sentiment,
+    positive_tfidf = positive.y,
+    negative_tfidf = negative.y
+  )
+
+final_table
+```
