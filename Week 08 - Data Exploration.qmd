@@ -632,7 +632,7 @@ example_sentences
 ```
 
 **How do the two texts differ in syntactic complexity?** \
-**Comparison between 2 distinct texts:**\
+**Comparison between 2 similar texts:**\
 When comparing A32827 and A32833, which were identified as highly similar based on their pairwise Pearson correlation, similarities in their syntactic complexity are also observed across all measures.
 
 - Mean Length of Sentence: 41.47 vs. 42.08 words
