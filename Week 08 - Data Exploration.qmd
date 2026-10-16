@@ -1,0 +1,697 @@
+---
+title: "Week 8: Data Exploration"
+author: "Viola Thadtanone"
+format: html
+editor: visual
+---
+
+## Setup & Preparation
+
+### Import Library
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(tidytext)
+library(ggplot2)
+library(forcats)
+library(tibble)
+library(scales)
+library(quanteda)
+library(quanteda.textstats)
+library(udpipe)
+library(purrr)
+```
+
+### Import input text files
+
+```{r}
+# Read all raw text files into R
+A06785 <- read_file('texts/A06785.txt')
+A06786 <- read_file('texts/A06786.txt')
+A06788 <- read_file('texts/A06788.txt')
+A06789 <- read_file('texts/A06789.txt')
+A06790 <- read_file('texts/A06790.txt')
+A06791 <- read_file('texts/A06791.txt')
+circle_raw <- read_file('texts/A07594__Circle_of_Commerce.txt')
+free_raw <- read_file('texts/B14801__Free_Trade.txt')
+A07886 <- read_file('texts/A07886.txt')
+A32827 <- read_file('texts/A32827.txt')
+A32828 <- read_file('texts/A32828.txt')
+A32829 <- read_file('texts/A32829.txt')
+A32830 <- read_file('texts/A32830.txt')
+A32833 <- read_file('texts/A32833.txt')
+A32836 <- read_file('texts/A32836.txt')
+A32837 <- read_file('texts/A32837.txt')
+A32838 <- read_file('texts/A32838.txt')
+A32839 <- read_file('texts/A32839.txt')
+A50763 <- read_file('texts/A50763.txt')
+A51598 <- read_file('texts/A51598.txt')
+A69858 <- read_file('texts/A69858.txt')
+A93819 <- read_file('texts/A93819.txt')
+wealth_raw <- read_file('texts/wealth.txt')
+
+# Combine all 23 texts into a vector
+texts_23 <- c(
+  "A06785" = A06785,
+  "A06786" = A06786,
+  "A06788" = A06788,
+  "A06789" = A06789,
+  "A06790" = A06790,
+  "A06791" = A06791,
+  "Circle of Commerce" = circle_raw,
+  "Free Trade" = free_raw,
+  "A07886" = A07886,
+  "A32827" = A32827,
+  "A32828" = A32828,
+  "A32829" = A32829,
+  "A32830" = A32830,
+  "A32833" = A32833,
+  "A32836" = A32836,
+  "A32837" = A32837,
+  "A32838" = A32838,
+  "A32839" = A32839,
+  "A50763" = A50763,
+  "A51598" = A51598,
+  "A69858" = A69858,
+  "A93819" = A93819,
+  "Wealth of Nations" = wealth_raw
+)
+
+```
+
+### Step 0: Perform Normalization
+
+```{r}
+# Perform normalization on the overall texts including the assumptions that:
+# 1. Replace ſ with s
+# 2. Convert all letters to lowercase
+# 3. Replace all consecutive whitespace into one space
+
+texts_23 <- texts_23 %>%
+  str_replace_all("ſ", "s") %>%
+  str_replace_all("\\s+", " ") %>%
+  str_to_lower()
+
+# Incorporate into Corpus
+corp <- corpus(texts_23)
+corp
+```
+
+### Step 0: Create a list of stopwords
+
+```{r}
+# Start with tidytext's built-in stopword list - This is such as "the", "a", "an".
+data("stop_words")
+
+# Add our own project-specific stopwords
+custom_stopwords <- tibble(
+  word = c(
+    "vnto", "haue", "doo", "hath", "bee", "ye", "thee"
+  )
+)
+
+all_stopwords <- bind_rows(stop_words, custom_stopwords) %>%
+  distinct(word)
+all_stopwords
+```
+
+### Step 0: Perform tokenization and remove stopwords
+
+```{r}
+# Perform tokenization and cleansing as follow:
+# 1. Remove punctuation since it does not affect the meaning of the words
+# 2. Remove numbers since it may include irrelevant numbers from pagination
+# 3. Remove symboles since it is likely a transcription/OCR errors
+tokens_clean <- tokens(
+  corp,
+  remove_punct = TRUE,
+  remove_numbers = TRUE,
+  remove_symbols = TRUE
+)
+
+# Remove the same set of stopwords 
+tokens_clean <- tokens_clean %>%
+  tokens_remove(all_stopwords$word)
+
+tokens_clean
+```
+
+Key decisions for normalisation choices include:
+
+- Replace ſ with s
+
+- Convert all letters to lowercase to ensures words such as "Merchant" and "merchant" are analysed as the same token
+
+- Standardize all consecutive whitespace into one space, so any extra spaces do not interfere with tokenization
+
+- Remove punctuation since it does not affect the meaning of the words
+
+- Remove numbers since it may include irrelevant numbers from pagination
+
+- Remove symboles since it is likely a transcription/OCR errors
+
+- Remove stopwords based on tidytext's built-in stopword list and project-specific stopwords (e.g. "vnto", "haue", "doo", "hath", "bee", "ye", and "thee") since they are common early-modern words, which do not provide much information about the topics of the documents
+
+## Approach 1 - TF-IDF: Lexical Distinctiveness
+
+```{r}
+# Construct a document–feature matrix (DFM) for the full corpus
+dfm_mat <- dfm(tokens_clean)
+dfm_mat
+```
+
+```{r}
+# Compute TF–IDF weights
+dfm_tfidf_mat <- dfm_tfidf(dfm_mat)
+dfm_tfidf_mat
+```
+
+```{r}
+# Convert the matrix into a regular data frame
+tfidf_df <- as.data.frame(as.matrix(dfm_tfidf_mat))
+tfidf_df$doc_title <- rownames(tfidf_df)
+
+# Convert to tidy format for all 23 documents
+tfidf_tidy <- tfidf_df %>%
+  pivot_longer(
+    cols = -doc_title,
+    names_to = "word",
+    values_to = "tfidf"
+  ) %>%
+  filter(tfidf > 0)
+tfidf_tidy
+```
+
+```{r}
+# Extract the top 15 TF-IDF terms for each document
+top_15_tfidf <- tfidf_tidy %>%
+  group_by(doc_title) %>%
+  slice_max(order_by = tfidf, n = 15, with_ties = FALSE) %>%
+  arrange(doc_title, desc(tfidf)) %>%
+  ungroup()
+top_15_tfidf
+```
+
+**Do some documents share distinctive vocabulary?**
+
+At first glance, the vocabulary in the A06790 text file distinctively stood out because it included “dragon”, “monster” and “hell” suggesting that this text might be a fairy tale or fictional story.
+
+Moreover, top words from A93819 such as "lion-key", "stairs", "edmond" do not appear among the top terms for the other documents highlighting its distinctiveness.
+
+On the other hand, A32838, A32839, and A69858 share distinctive vocabulary related to India and overseas trade such as “bombay”, “east-india” or “bengall”, whereas general words related to political economy, such as “exchange,” “moneys,” and “commodities,” appeared across other documents.
+
+**Are distinctive terms topical, rhetorical, or technical?**
+
+Further investigation on A06790 revealed that the text was written by Malynes, who used “dragon” and “monster” to metaphorically discuss about political economy. Hence these distinctive terms can be considered as rhetorical.\
+\
+For A93819, its terms appear to be topical since words such as “thames,” “wharfige,” and “london-bridge” are related to London’s riverfront.
+
+For A32838, A32839, and A69858, the distinctive terms can be considered as topical since these texts focus on the East India Company’s trade with India and its importance to England’s economy.
+
+## Approach 2 - Pearson correlation: similarity and distance between texts
+
+```{r}
+# Trim very rare words - Only keeping words that occur at least five times across the whole corpus
+dfm_mat_trim <- dfm_trim(
+  dfm_mat,
+  min_termfreq = 5
+)
+
+# Use the DFM to compute pairwise Pearson correlations between documents
+sim_r <- textstat_simil(dfm_mat_trim, margin = "documents", method = "correlation") 
+
+# Convert similarity object to a matrix 
+r_mat <- as.matrix(sim_r) 
+
+# Take a quick look 
+dim(r_mat) 
+r_mat[1:5, 1:5]
+
+# rounding correlation for readability (see explanation below) 
+r_mat <- round(r_mat, 3)
+
+# Long format for ggplot  
+heat_df <- as.data.frame(r_mat) %>%  
+  rownames_to_column("doc_i") %>% # First document in pair
+  pivot_longer(-doc_i, names_to = "doc_j", values_to = "r") # Second document + correlation  
+
+# Create the heatmap
+ggplot(heat_df, aes(x = doc_j, y = doc_i, fill = r)) +
+  geom_tile() + # Create colored tiles
+  coord_fixed() + # Keep tiles square
+  scale_fill_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 0 # Center color scale at 0
+  ) +
+  labs(
+    title = "Pearson Correlation Between Documents",
+    x = NULL,
+    y = NULL,
+    fill = "Correlation"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+
+**Identify two most similar document pairs**
+
+- A32827 and A32833 with pairwise Pearson correlations at 0.9996 - Common words share include "plantations", "abatement" and "cent".
+
+- A32836 and A50763 with pairwise Pearson correlations at 0.9788 - Common words share include "poor", "parish" and "fathers".
+
+**Identify two lease similar document pairs**
+
+- A32830 and A93819 with pairwise Pearson correlations at 0.0487
+
+- A06791 and A93819 with pairwise Pearson correlations at 0.0538
+
+**What questions would you ask from this corpus after seeing the patterns of similarity/differences that you see here? Explain your answer.**
+
+For similar pairs such as A32827 & A32833 and A32836 & A50763, we may question whether they come from the same text. Given that their top words are almost identical, it is possible that they may be excerpts from the same books or series of books.
+
+Additionally, one might question whether these document pairs come from the same author, as an author may tend to use similar words across their works. This can also lead to higher similarity between documents even when they are discussing different topics.
+
+## Approach 3 - Syntactic complexity profile
+
+### Step 3.1 - Comparison between 2 similar texts
+
+```{r}
+# Select 2 raw texts
+texts_df_1 <- tibble(
+  document = c("A32836", "A50763"),
+  text = c(A32836, A50763)
+) %>%
+  mutate(
+    text = str_replace_all(text, "ſ", "s") # Replace long S
+  )
+
+texts_df_1
+```
+
+```{r}
+# Annotate both texts using UDPipe
+anno_df_1 <- texts_df_1 %>%
+  mutate(
+    # Parse each text with the UD parser; set doc_id to our document name
+    anno = map2(text, document, ~ udpipe_annotate(ud_model, x = .x, doc_id = .y) %>%
+                  as.data.frame())
+  ) %>%
+  # Keep only parsed annotations, then unnest into rows
+  select(anno) %>%
+  unnest(anno) %>%
+  # Use the UD doc_id as our document label (and drop any duplicates cleanly)
+  rename(document = doc_id) %>%
+  # Select columns for syntactic analysis
+  select(
+    document,
+    paragraph_id,
+    sentence_id,
+    token_id,
+    token,
+    lemma,
+    upos,          # part of speech
+    feats,         # grammatical features (e.g., verb form)
+    head_token_id, # head of dependency relation
+    dep_rel        # dependency relation type
+  )
+```
+
+```{r}
+# Create binary flags for different syntactic structures
+syntax_df_1 <- anno_df_1 %>%
+  mutate(
+    is_word = upos != "PUNCT", #<--is it a word (and not punctuation?)
+    
+    
+    # Is this an independent clause? finite verbs are proxy for indipendent clauses
+    is_clause = (upos %in% c("VERB", "AUX")) &
+      str_detect(coalesce(feats, ""), "VerbForm=Fin"),
+    
+    # Dependent clause? 
+    is_dep_clause = dep_rel %in% c(
+      "advcl", #adverbial clause 
+      "ccomp", # clausal complement
+      "xcomp", #open clausal complement
+      "acl", #adnomial clause
+      "acl:relcl" #relative clause
+    ),
+    
+    # Is this coordination? That is, does it use "and" "or" etc.?
+    is_coord = dep_rel %in% c("conj", "cc"),
+    
+    # Nominal complexity: these relations make noun phrases more complex
+    is_complex_nominal = dep_rel %in% c(
+      "amod", # adjective modifier ("big cup")
+      "nmod", #nominal modifier ("cup of tea")
+      "compound", # compound ("lemon tea")
+      "appos" #apposition ("tea, my favorite!")
+    )
+    
+  )
+```
+
+```{r}
+# Aggregate at the sentence level and count syntactic features for each individual sentence
+sentence_df_1 <- syntax_df_1 %>%
+  filter(is_word) %>%           #count words (not punctuation)
+  group_by(document, sentence_id) %>%   #group by document and sentence
+  summarise(
+    words          = n(),   #number of words per sentence
+    clauses        = sum(is_clause), # number of clauses per sentence
+    dep_clauses    = sum(is_dep_clause), #number of dependent clauses per sentence
+    .groups = "drop"
+  )
+
+sentence_df_1
+```
+
+```{r}
+# Mean length of sentence
+mls_df_1 <- sentence_df_1 %>%
+  group_by(document) %>%
+  summarise(
+    MLS = mean(words), # Average words per sentence
+    .groups = "drop"
+  )
+
+# Clauses per sentence
+clausal_density_df_1 <- sentence_df_1 %>%
+  group_by(document) %>%
+  summarise(
+    sentences = n(),
+    clauses   = sum(clauses),
+    C_per_S   = clauses / sentences,
+    .groups = "drop"
+  )
+
+# Dependent Clauses per Clause and/or Sentence 
+subordination_df_1 <- sentence_df_1 %>%
+  group_by(document) %>%
+  summarise(
+    clauses = sum(clauses),
+    dep_clauses = sum(dep_clauses),
+    sentences = n(),
+    DC_per_C = dep_clauses / pmax(clauses, 1), #avoid division by 0 (shouldn't happen, but if no clauses were detected in the sentence, we still want it to run)
+    DC_per_S = dep_clauses / sentences,
+    .groups = "drop"
+  )
+
+# Coordination per Clause and/or Sentence
+coordination_df_1 <- syntax_df_1 %>%
+  group_by(document) %>%
+  summarise(
+    coord_relations = sum(is_coord),
+    clauses         = sum(is_clause),
+    sentences       = n_distinct(sentence_id),
+    Coord_per_C     = coord_relations / pmax(clauses, 1),
+    Coord_per_S     = coord_relations / sentences,
+    .groups = "drop"
+  )
+
+# Complex Nominals per Clause and/or Sentence 
+nominal_df_1 <- syntax_df_1 %>%
+  group_by(document) %>%
+  summarise(
+    complex_nominals = sum(is_complex_nominal),
+    clauses          = sum(is_clause),
+    sentences        = n_distinct(sentence_id),
+    CN_per_C         = complex_nominals / pmax(clauses, 1),
+    CN_per_S         = complex_nominals / sentences,
+    .groups = "drop"
+  )
+```
+
+```{r}
+# Combine all measures
+all_measures_1 <- mls_df_1 %>%  # ← Added mls_df_1 %>%
+  left_join(clausal_density_df_1 %>% select(document, C_per_S), by = "document") %>%
+  left_join(subordination_df_1 %>% select(document, DC_per_C, DC_per_S), by = "document") %>%
+  left_join(coordination_df_1 %>% select(document, Coord_per_C, Coord_per_S), by = "document") %>%
+  left_join(nominal_df_1 %>% select(document, CN_per_C, CN_per_S), by = "document")
+
+all_measures_1 %>%
+  knitr::kable(
+    digits = 2,
+    col.names = c("Document", "MLS", "C/S", "DC/C", "DC/S", 
+                  "Coord/C", "Coord/S", "CN/C", "CN/S")
+  )
+all_measures_1
+```
+
+### Step 3.2 - Comparison between 2 distinct texts
+
+```{r}
+# Select 2 raw texts
+texts_df_2 <- tibble(
+  document = c("A06790", "Free Trade"),
+  text = c(A06790, free_raw)
+) %>%
+  mutate(
+    text = str_replace_all(text, "ſ", "s") # Replace long S
+  )
+
+texts_df_2
+```
+
+```{r}
+# Annotate both texts using UDPipe
+anno_df_2 <- texts_df_2 %>%
+  mutate(
+    # Parse each text with the UD parser; set doc_id to our document name
+    anno = map2(text, document, ~ udpipe_annotate(ud_model, x = .x, doc_id = .y) %>%
+                  as.data.frame())
+  ) %>%
+  # Keep only parsed annotations, then unnest into rows
+  select(anno) %>%
+  unnest(anno) %>%
+  # Use the UD doc_id as our document label (and drop any duplicates cleanly)
+  rename(document = doc_id) %>%
+  # Select columns for syntactic analysis
+  select(
+    document,
+    paragraph_id,
+    sentence_id,
+    token_id,
+    token,
+    lemma,
+    upos,          # part of speech
+    feats,         # grammatical features (e.g., verb form)
+    head_token_id, # head of dependency relation
+    dep_rel        # dependency relation type
+  )
+
+```
+
+```{r}
+# Create binary flags for different syntactic structures
+syntax_df_2 <- anno_df_2 %>%
+  mutate(
+    is_word = upos != "PUNCT", #<--is it a word (and not punctuation?)
+    
+    
+    # Is this an independent clause? finite verbs are proxy for indipendent clauses
+    is_clause = (upos %in% c("VERB", "AUX")) &
+      str_detect(coalesce(feats, ""), "VerbForm=Fin"),
+    
+    # Dependent clause? 
+    is_dep_clause = dep_rel %in% c(
+      "advcl", #adverbial clause 
+      "ccomp", # clausal complement
+      "xcomp", #open clausal complement
+      "acl", #adnomial clause
+      "acl:relcl" #relative clause
+    ),
+    
+    # Is this coordination? That is, does it use "and" "or" etc.?
+    is_coord = dep_rel %in% c("conj", "cc"),
+    
+    # Nominal complexity: these relations make noun phrases more complex
+    is_complex_nominal = dep_rel %in% c(
+      "amod", # adjective modifier ("big cup")
+      "nmod", #nominal modifier ("cup of tea")
+      "compound", # compound ("lemon tea")
+      "appos" #apposition ("tea, my favorite!")
+    )
+    
+  )
+```
+
+```{r}
+# Aggregate at the sentence level and count syntactic features for each individual sentence
+sentence_df_2 <- syntax_df_2 %>%
+  filter(is_word) %>%           #count words (not punctuation)
+  group_by(document, sentence_id) %>%   #group by document and sentence
+  summarise(
+    words          = n(),   #number of words per sentence
+    clauses        = sum(is_clause), # number of clauses per sentence
+    dep_clauses    = sum(is_dep_clause), #number of dependent clauses per sentence
+    .groups = "drop"
+  )
+
+sentence_df_2
+```
+
+```{r}
+# Mean length of sentence
+mls_df_2 <- sentence_df_2 %>%
+  group_by(document) %>%
+  summarise(
+    MLS = mean(words), # Average words per sentence
+    .groups = "drop"
+  )
+
+# Clauses per sentence
+clausal_density_df_2 <- sentence_df_2 %>%
+  group_by(document) %>%
+  summarise(
+    sentences = n(),
+    clauses   = sum(clauses),
+    C_per_S   = clauses / sentences,
+    .groups = "drop"
+  )
+
+# Dependent Clauses per Clause and/or Sentence 
+subordination_df_2 <- sentence_df_2 %>%
+  group_by(document) %>%
+  summarise(
+    clauses = sum(clauses),
+    dep_clauses = sum(dep_clauses),
+    sentences = n(),
+    DC_per_C = dep_clauses / pmax(clauses, 1), #avoid division by 0 (shouldn't happen, but if no clauses were detected in the sentence, we still want it to run)
+    DC_per_S = dep_clauses / sentences,
+    .groups = "drop"
+  )
+
+# Coordination per Clause and/or Sentence
+coordination_df_2 <- syntax_df_2 %>%
+  group_by(document) %>%
+  summarise(
+    coord_relations = sum(is_coord),
+    clauses         = sum(is_clause),
+    sentences       = n_distinct(sentence_id),
+    Coord_per_C     = coord_relations / pmax(clauses, 1),
+    Coord_per_S     = coord_relations / sentences,
+    .groups = "drop"
+  )
+
+# Complex Nominals per Clause and/or Sentence 
+nominal_df_2 <- syntax_df_2 %>%
+  group_by(document) %>%
+  summarise(
+    complex_nominals = sum(is_complex_nominal),
+    clauses          = sum(is_clause),
+    sentences        = n_distinct(sentence_id),
+    CN_per_C         = complex_nominals / pmax(clauses, 1),
+    CN_per_S         = complex_nominals / sentences,
+    .groups = "drop"
+  )
+```
+
+```{r}
+# Combine all measures
+all_measures_2 <- mls_df_2 %>%  # ← Added mls_df_2 %>%
+  left_join(clausal_density_df_2 %>% select(document, C_per_S), by = "document") %>%
+  left_join(subordination_df_2 %>% select(document, DC_per_C, DC_per_S), by = "document") %>%
+  left_join(coordination_df_2 %>% select(document, Coord_per_C, Coord_per_S), by = "document") %>%
+  left_join(nominal_df_2 %>% select(document, CN_per_C, CN_per_S), by = "document")
+
+all_measures_2 %>%
+  knitr::kable(
+    digits = 2,
+    col.names = c("Document", "MLS", "C/S", "DC/C", "DC/S", 
+                  "Coord/C", "Coord/S", "CN/C", "CN/S")
+  )
+all_measures_2
+```
+
+```{r}
+# Identify long sentences
+example_sentences <- syntax_df_2 %>%
+  filter(is_word) %>%
+  group_by(document, sentence_id) %>%
+  summarise(
+    sentence = str_c(token, collapse = " "),
+    words = n(),
+    clauses = sum(is_clause),
+    dep_clauses = sum(is_dep_clause),
+    .groups = "drop"
+  ) %>%
+  group_by(document) %>%
+  arrange(desc(clauses), desc(words), .by_group = TRUE) %>%
+  slice_head(n = 5) %>%
+  ungroup()
+example_sentences
+```
+
+**How do the two texts differ in syntactic complexity?** \
+**Comparison between 2 distinct texts:**\
+When comparing A32827 and A32833, which were identified as highly similar based on their pairwise Pearson correlation, similarities in their syntactic complexity are also observed across all measures.
+
+- Mean Length of Sentence: 41.47 vs. 42.08 words
+
+- Clauses per Sentence (C/S): 3.36 vs. 3.27
+
+- Dependent Clauses per clause: 0.94 vs. 0.94
+
+- Dependent Clauses per sentence : 3.15 vs. 3.09
+
+- Coordination per clause: 1.46 vs. 1.59
+
+- Coordination per sentence: 4.92 vs. 5.20
+
+- Complex Nominals per clause: 1.64 vs. 1.77
+
+- Complex Nominals per sentence: 5.50 vs. 5.80
+
+Thus, the similarity between these texts extends beyond their use of common and distinctive vocabulary to the ways in which sentences are syntactically constructed.
+
+**Comparison between 2 distinct texts:\**
+A06790 and Free Trade, which have different authors and pairwise Pearson correlation at 0.165, demonstrate a completely different syntactic complexity. A06790 has substantially longer sentences (44.67 vs. 23.58 words), nearly twice as many clauses per sentence (2.96 vs. 1.56), and considerably more dependent clauses per sentence (3.66 vs. 1.19) and coordination per sentence (5.50 vs. 2.76). On the other hand, *Free Trade* has a higher number of complex nominals per clause (2.69 vs. 1.97).
+
+- Mean Length of Sentence: 44.67 vs. 23.58 words
+
+- Clauses per Sentence (C/S): 2.96 vs. 1.56
+
+- Dependent Clauses per clause: 1.24 vs. 0.76
+
+- Dependent Clauses per sentence: 3.66 vs. 1.19
+
+- Coordination per clause: 1.86 vs. 1.77
+
+- Coordination per sentence: 5.50 vs. 2.76
+
+- Complex Nominals per clause: 1.97 vs. 2.69
+
+- Complex Nominals per sentence: 5.84 vs. 4.20
+
+**Do these differences align with or complicate your earlier lexical findings?**
+
+The findings from the syntactic complexity analysis align with the initial assumptions inferred from the TF-IDF and Pearson correlation results. Texts that showed high lexical similarity, with similar patterns in their top distinctive words, were initially hypothesised to potentially come from the same authors or the same books. Hence, it was expected that their syntactic complexity would also be relatively similar, as illustrated in the syntactic measure summary.
+
+In contrast, differences in syntactic complexity are expected between A06790 (Malynes) and *Free Trade* (Misselden), especially when they are known to have been written by different authors. This expectation is also supported by syntactic complexity results, which show clear differences across several measures.\
+
+**What kinds of rhetorical or stylistic practices might these syntactic patterns reflect?**
+
+When comparing between distinctive texts, A06790 tends to use long sentences with many dependent clauses and coordination. For example, "*Hearing the same me thought I was possessed with a most fervent desire to understand the particularity as well of that Dragon whereof he complained as of the other which is reported to have been slain or vanquished by Saint George for I had many times inquired very diligently where that Island might be situated where that dragon was destroyed and how it was possible that he could devour such an infinite number of creatures as is reported which made me to be very importunate with this man to know every thing with the circumstances thereof whom I found to be not only by learning but also by nature of singular eloquence and in reasoning and debating of matters of politic government what by his natural wit and what by daily exercise surely he had in my judgement few fellows by reason whereof he gave me full satisfaction and answer to all my demands and seemed in his discourse to discharge the part of an Orator”* has 166 words, 15 clauses and 19 dependent-clause relations. This reflects a more syntactically elaborate and discursive writing style, where the author' ideas are explained, and expanded within other ideas.
+
+*Free Trade* also contains long sentences, but generally uses fewer dependent clauses. For example, "*For the Stocke of the East India Company being of great value and collected and contracted from all the other particular Trades of the Common wealth and a great part thereof hauing bin Embargued and Detained now for more then fiue yeeres last past and that not by a Profest Enemy against whom wee might haue bin warn 'd and Arm'd but by a Friend a Neighbour a Next Neighbor one obliged to our KING and Nation more then to all the Kings on earth this losse I say is not onely thus vnkind but is the more intollerable in that the Common wealth hath lost the vse and employment of the Stocke it selfe and all the encrease of Trade which the same might haue produced in the seuerall Trades of the Subiects whereby abundance of Treasure might haue beene brought into this land in all this time*" contains 149 words, 11 clauses, but only 8 dependent clause. Its complexity comes from coordination and repetition, such as “a Friend a Neighbour a Next Neighbor,” which creates emphasis rather than digressing from one idea to another.
+
+## Synthesis - Triangulating evidence
+
+From conducting the three analytical approaches, it can be seen that no single methodology can holistically capture text similarity. TF-IDF, Pearson correlation, and syntactic complexity capture different dimensions of a text and therefore become more informative when considered together.
+
+In our analysis, TF-IDF provides a starting point by identifying the distinctive words within each text. This allows us to identify important vocabulary and potential themes. However, the presence of similar distinctive words alone does not necessarily indicate that two texts are similar as a whole.
+
+Pearson correlation builds on this analysis by quantifying the similarity of word usage across the corpus. Nevertheless, a high correlation does not necessarily imply that two texts are written in the same manner.
+
+Finally, syntactic complexity adds another dimension to the analysis by examining how the texts are constructed. Measures such as sentence length, clauses, dependent clauses, coordination, and complex nominals allow us to compare writing structures rather than vocabulary alone.
+
+Together, these three methods provide a more comprehensive account of text similarity, while complementing one another in addressing the limitations of each individual method.
