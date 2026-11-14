@@ -75,3 +75,26 @@ for i in sorted_indices[:15]:
 print("\nTop 15 positive-weight words (predictive of CORE = 1):")
 for i in sorted_indices[-15:][::-1]:
     print(feature_names[i], coefficients[i])
+    
+# Inspect misclassified examples
+false_positives = []
+false_negatives = []
+
+for text, true_label, pred_label in zip(X_test_texts, y_test, y_pred):
+    if true_label == 0 and pred_label == 1:
+        false_positives.append(text)
+
+    elif true_label == 1 and pred_label == 0:
+        false_negatives.append(text)
+
+
+print("\n--- 5 FALSE POSITIVES ---")
+for i, text in enumerate(false_positives[:5], 1):
+    print(f"\nFalse Positive {i}:")
+    print(text)
+
+
+print("\n--- 5 FALSE NEGATIVES ---")
+for i, text in enumerate(false_negatives[:5], 1):
+    print(f"\nFalse Negative {i}:")
+    print(text)
