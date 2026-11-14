@@ -79,25 +79,18 @@ print("\nTop 15 positive-weight words (predictive of CORE = 1):")
 for i in sorted_indices[-15:][::-1]:
     print(feature_names[i], coefficients[i])
     
-# Inspect misclassified examples
-false_positives = []
-false_negatives = []
+# Inspect up to 10 misclassified examples
+misclassified = []
 
 for text, true_label, pred_label in zip(X_test_texts, y_test, y_pred):
-    if true_label == 0 and pred_label == 1:
-        false_positives.append(text)
+    if true_label != pred_label:
+        misclassified.append((text, true_label, pred_label))
 
-    elif true_label == 1 and pred_label == 0:
-        false_negatives.append(text)
+print("\n--- MISCLASSIFIED EXAMPLES ---")
+print("Total misclassified:", len(misclassified))
 
-
-print("\n--- 5 FALSE POSITIVES ---")
-for i, text in enumerate(false_positives[:5], 1):
-    print(f"\nFalse Positive {i}:")
-    print(text)
-
-
-print("\n--- 5 FALSE NEGATIVES ---")
-for i, text in enumerate(false_negatives[:5], 1):
-    print(f"\nFalse Negative {i}:")
+for i, (text, true_label, pred_label) in enumerate(misclassified[:10], 1):
+    print(f"\nMisclassified {i}:")
+    print("True label:", true_label)
+    print("Predicted label:", pred_label)
     print(text)
