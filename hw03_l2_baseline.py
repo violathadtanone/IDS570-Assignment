@@ -7,23 +7,28 @@ from sklearn.metrics import (
     classification_report,
     roc_auc_score
 )
-
 from sklearn.feature_extraction.text import TfidfVectorizer
+
 
 DATA_DIR = Path("data")
 
+# Load train and test data
 with open(DATA_DIR / "train_core_vs_neg.json", "r", encoding="utf-8") as f:
     train_data = json.load(f)
 
 with open(DATA_DIR / "test_core_vs_neg.json", "r", encoding="utf-8") as f:
     test_data = json.load(f)
 
+
+# Separate texts and labels
 X_train_texts = [t for (t, y) in train_data]
 y_train = [y for (t, y) in train_data]
 
 X_test_texts = [t for (t, y) in test_data]
 y_test = [y for (t, y) in test_data]
 
+
+# TF-IDF representation
 vectorizer = TfidfVectorizer(
     lowercase=True,
     min_df=5,
@@ -33,31 +38,40 @@ vectorizer = TfidfVectorizer(
 X_train = vectorizer.fit_transform(X_train_texts)
 X_test = vectorizer.transform(X_test_texts)
 
+
+# Train L2 logistic regression model
 clf = LogisticRegression(
-    max_iter=1000,
-    n_jobs=1
+    max_iter=1000
 )
 
 clf.fit(X_train, y_train)
 
-#test set predictions
+
+# Test set predictions
 y_pred = clf.predict(X_test)
 y_prob = clf.predict_proba(X_test)[:, 1]
 
+
+# Confusion matrix
 cm = confusion_matrix(y_test, y_pred)
 print("Confusion matrix:")
 print(cm)
 
+
+# Classification report
 print("\nClassification report:")
 print(classification_report(y_test, y_pred))
 
-### ROC AUC
+
+# ROC AUC
 auc = roc_auc_score(y_test, y_prob)
 print("ROC AUC:", round(auc, 3))
+
 
 # Model sparsity diagnostic
 non_zero = (clf.coef_[0] != 0).sum()
 print("Non-zero coefficients:", non_zero)
+
 
 # Inspect what the model learned
 feature_names = vectorizer.get_feature_names_out()
@@ -66,35 +80,32 @@ coefficients = clf.coef_[0]
 # Sort coefficients from smallest to largest
 sorted_indices = coefficients.argsort()
 
+
 # Top 15 negative-weight words
 print("\nTop 15 negative-weight words (predictive of NEG = 0):")
 for i in sorted_indices[:15]:
     print(feature_names[i], coefficients[i])
 
+
 # Top 15 positive-weight words
 print("\nTop 15 positive-weight words (predictive of CORE = 1):")
 for i in sorted_indices[-15:][::-1]:
     print(feature_names[i], coefficients[i])
-    
-# Inspect misclassified examples
-false_positives = []
-false_negatives = []
+
+
+# Inspect up to 10 misclassified examples
+misclassified = []
 
 for text, true_label, pred_label in zip(X_test_texts, y_test, y_pred):
-    if true_label == 0 and pred_label == 1:
-        false_positives.append(text)
-
-    elif true_label == 1 and pred_label == 0:
-        false_negatives.append(text)
+    if true_label != pred_label:
+        misclassified.append((text, true_label, pred_label))
 
 
-print("\n--- 5 FALSE POSITIVES ---")
-for i, text in enumerate(false_positives[:5], 1):
-    print(f"\nFalse Positive {i}:")
-    print(text)
+print("\n--- MISCLASSIFIED EXAMPLES ---")
+print("Total misclassified:", len(misclassified))
 
-
-print("\n--- 5 FALSE NEGATIVES ---")
-for i, text in enumerate(false_negatives[:5], 1):
-    print(f"\nFalse Negative {i}:")
+for i, (text, true_label, pred_label) in enumerate(misclassified[:10], 1):
+    print(f"\nMisclassified {i}:")
+    print("True label:", true_label)
+    print("Predicted label:", pred_label)
     print(text)
