@@ -1,4 +1,8 @@
 texts/
+data/merchant_labeled_chunks.json
+models/w2v_full.bin.syn1neg.npy
+models/w2v_full.bin.wv.vectors.npy
+models/w2v_full.bin
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
